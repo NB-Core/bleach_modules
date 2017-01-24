@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 
 function arrancar_train_getmoduleinfo() {
 	$info = array
@@ -22,6 +22,58 @@ function arrancar_train_getmoduleinfo() {
 
 function arrancar_train_install(){
 	module_addhook("village-Las Noches");
+	$masters=array(
+		'creatureid'=>array(
+			'name'=>'creatureid',
+			'type'=>'int(11) unsigned',
+			'extra'=>'auto_increment'
+			),
+		'creaturename'=>array(
+			'name'=>'creaturename', 'type'=>'varchar(50)', 'null'=>'1'
+			),
+		'creaturelevel'=>array(
+			'name'=>'creaturelevel', 'type'=>'int(11)', 'null'=>'1'
+			),
+		'creatureweapon'=>array(
+			'name'=>'creatureweapon', 'type'=>'varchar(50)', 'null'=>'1'
+			),
+		'creaturelose'=>array(
+			'name'=>'creaturelose', 'type'=>'varchar(120)', 'null'=>'1'
+			),
+		'creaturewin'=>array(
+			'name'=>'creaturewin', 'type'=>'varchar(120)', 'null'=>'1'
+			),
+		'creaturegold'=>array(
+			'name'=>'creaturegold', 'type'=>'int(11)', 'null'=>'1'
+			),
+		'creatureexp'=>array(
+			'name'=>'creatureexp', 'type'=>'int(11)', 'null'=>'1'
+			),
+		'creaturehealth'=>array(
+			'name'=>'creaturehealth', 'type'=>'int(11)', 'null'=>'1'
+			),
+		'creatureattack'=>array(
+			'name'=>'creatureattack', 'type'=>'int(11)', 'null'=>'1'
+			),
+		'creaturedefense'=>array(
+			'name'=>'creaturedefense', 'type'=>'int(11)', 'null'=>'1'
+			),
+		'key-PRIMARY'=>array(
+			'name'=>'PRIMARY',
+			'type'=>'primary key',
+			'unique'=>'1',
+			'columns'=>'creatureid'
+			)
+		);
+	require_once("lib/tabledescriptor.php");
+	synctable(db_prefix("masters_arrancar"), $masters, true);
+		if (is_module_active("arrancar_train")) {
+		debug("Module Translationwizard updated");
+	}	else {
+		//install on first run 
+		$sql="INSERT INTO ".db_prefix('masters_arrancar')." (`creatureid`, `creaturename`, `creaturelevel`, `creatureweapon`, `creaturelose`, `creaturewin`, `creaturegold`, `creatureexp`, `creaturehealth`, `creatureattack`, `creaturedefense`) VALUES (1, 'Tia Halibel', 1, 'Tiburón', 'Impossible! I am suppose to be stronger than you!', 'You are an embarrassment. I will make sure you cannot make this embarrassment worse.', NULL, NULL, 12, 2, 2), (2, 'Zommari Leroux', 2, 'Brujería Body Control', 'You are a genius, one might say.', 'Your base are belong to us. *snicker*', NULL, NULL, 22, 4, 4), (3, 'Lilynette Gingerback', 3, 'Unbelievably sharp tongue', 'Stark! That meanie hit me!', 'It\\''s over. Wolf wins.', NULL, NULL, 33, 6, 6), (4, 'Gantenbainne Mosqueda', 4, 'Dragra', 'I was careless...', 'Did my light cut you down or was it your mean hairstyle?', NULL, NULL, 44, 8, 8), (5, 'Aaroniero Arruruerie', 5, 'Glotonería', 'Good - you managed to defeat your memories after all.', 'Still pondering about the past? Conquer your memories and get stronger than them.', NULL, NULL, 55, 10, 10), (6, 'Ulquiorra Cifer', 6, 'Murciélago ', 'Ts, you may pass.', 'This is a waste of my time.', NULL, NULL, 66, 12, 12), (7, 'Yammy Riyalgo', 7, 'Ira', 'That was fun. Let\\''s do it again as a little warm-up.', 'Is that all you got? Next time bring along somebody stronger.', NULL, NULL, 77, 14, 14), (8, 'Baraggan Luisenbarn', 8, 'Arrogante', 'Already over? You did surprisingly well.', 'Someone like you is a thousand years too early to be standing before me.', NULL, NULL, 88, 16, 16), (9, 'Grimmjow Jaegerjaquez', 9, 'Pantera', 'I commend you, nice play.', 'You are unworthy of my time.', NULL, NULL, 99, 19, 19);";
+		db_query($sql);
+	}
 	return true;
 }
 
