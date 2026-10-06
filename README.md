@@ -45,6 +45,11 @@ Install and activate in this order:
 Then refresh the specialty registry: *Grotto → Mechanics → Refresh Specialty
 System Add-Ons*.
 
+**Upgrading from the 2017 version:** player data is not migrated. Several
+modules were renamed or merged and zanpakutō data is now stored as JSON
+instead of serialized PHP objects, so uninstall the old modules first and
+start fresh.
+
 ### Settings
 
 - `racesystem` → *worldname*: the name of your capital (e.g. `Seireitei`);
