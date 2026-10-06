@@ -1,215 +1,228 @@
 <?php
 
-//taken a deep look into City - Amwayr from Billie Kennedy
+declare(strict_types=1);
 
-function lasnoches_getmoduleinfo(){
-	$info = array(
-		"name"=>"Hueco Mundo",
-		"version"=>"1.0",
-		"author"=>"`2Oliver Brendel",
-		"category"=>"Cities",
-		"download"=>"",
-		"requires"=>array(
-			"cities"=>"1.0|Eric Stevens, part of the core download",
-		),
-		"settings"=>array(
-			"Hokage Village Settings,title",
-			"villagename"=>"Name for the village|`4L`)as `7N`\$oches",
-			"showforest"=>"Is the forest available from here?,bool|0",
-			"travelfrom"=>"Where can you travel from,location|".getsetting("villagename", LOCATION_FIELDS),
-			"travelto"=>"Where can you travel to,location|".getsetting("villagename", LOCATION_FIELDS),
-			"mindk"=>"How many dks does a player have to have for access?,int|20",
-		),
-		"prefs"=>array(
-			),
-	);
-	return $info;
+use Doctrine\DBAL\ParameterType;
+use Lotgd\MySQL\Database;
+
+/**
+ * Hueco Mundo: the city of Las Noches, home of the Arrancar and Menos.
+ *
+ * Based on "City - Amwayr" by Billie Kennedy. Hollows start here (see
+ * racesystem/races.php) and can always travel home; everybody else needs the
+ * configured dragon kills and has to set out from one of the gate cities.
+ */
+
+function lasnoches_getmoduleinfo(): array
+{
+    return [
+        'name' => 'Hueco Mundo (Las Noches)',
+        'version' => '2.0',
+        'author' => '`2Oliver Brendel',
+        'category' => 'Cities',
+        'download' => 'https://github.com/NB-Core/bleach_modules',
+        'requires' => [
+            'cities' => '1.0|Eric Stevens, part of the core download',
+        ],
+        'settings' => [
+            'Las Noches Settings,title',
+            'villagename' => 'Name of the city|`4L`)as `7N`$oches',
+            'showforest' => 'Is the forest available from here?,bool|0',
+            'travelfrom' => 'Gate city to Las Noches,location|' . getsetting('villagename', LOCATION_FIELDS),
+            'travelto' => 'Second gate city to Las Noches,location|' . getsetting('villagename', LOCATION_FIELDS),
+            'travelcost' => 'Travel points the trip to Las Noches costs,int|5',
+            'mindk' => 'Dragon kills a non-Hollow needs to travel to Las Noches,int|20',
+        ],
+    ];
 }
 
-function lasnoches_install(){
-	module_addhook("villagetext");
-	module_addhook("village");
-	module_addhook("travel");
-	module_addhook("validlocation");
-	module_addhook("moderate");
-	module_addhook("changesetting");
-	module_addhook("mountfeatures");
-	module_addhook("scrylocation");
-	return true;
+function lasnoches_install(): bool
+{
+    module_addhook('villagetext');
+    module_addhook('village');
+    module_addhook('travel');
+    module_addhook('travel-cost');
+    module_addhook('validlocation');
+    module_addhook('moderate');
+    module_addhook('changesetting');
+    module_addhook('scrylocation');
+
+    return true;
 }
 
-function lasnoches_uninstall(){
-	global $session;
-	$vname = getsetting("villagename", LOCATION_FIELDS);
-	$gname = get_module_setting("villagename");
-	$sql = "UPDATE " . db_prefix("accounts") . " SET location='$vname' WHERE location = '$gname'";
-	db_query($sql);
-	if ($session['user']['location'] == $gname)
-		$session['user']['location'] = $vname;
-	return true;
+function lasnoches_uninstall(): bool
+{
+    global $session;
+
+    $city = lasnoches_city();
+    $capital = getsetting('villagename', LOCATION_FIELDS);
+    lasnoches_move_players($city, $capital);
+    if ($session['user']['location'] === $city) {
+        $session['user']['location'] = $capital;
+    }
+
+    return true;
 }
 
-function lasnoches_dohook($hookname,$args){
-	global $session,$resline;
-	$city = get_module_setting("villagename");
-	switch($hookname){
-	case "scrylocation":
-		//you cannot scry to this one
-		if (array_key_exists(sanitize($city),$args)) {
-			$args=array_diff($args,array(sanitize($city)=>$args[sanitize($city)]));
-		}
-		break;
-	case "travel":
-break;
-		$args2 = modulehook("count-travels", array('available'=>0,'used'=>0));
-		$free = max(0, $args2['available'] - $args2['used']);
-		$tfree=$free+$session['user']['turns'];
-		$capital = getsetting("villagename", LOCATION_FIELDS);
-		$hotkey = substr(sanitize($city), 0, 1);
-		$scity = htmlentities(sanitize($city),ENT_COMPAT,getsetting('charset','ISO-8859-1'));
-		tlschema("module-cities");
-		if (($session['user']['superuser']&SU_MEGAUSER)!=SU_MEGAUSER) break;
-		if ($session['user']['dragonkills'] < get_module_setting("mindk")) 
-			break;
-		if ($session['user']['location']!=$city){
-			addnav("More Dangerous Travel");
-			// Actually make the travel dangerous
-			$cost=5;
-			if($session['user']['location'] == get_module_setting("travelfrom")){
-			addnav(array("Go to %s (%s points)", ($tfree>=$cost?$city:sanitize($city)),$cost),
-					($tfree>=$cost?"runmodule.php?op=travel&module=cities&cost=5&city=$scity&d=1":""));
-			}
-			if($session['user']['location'] == get_module_setting("travelto") && $session['user']['location'] != get_module_setting("travelfrom")){
-			addnav(array("Go to %s (%s points)", ($tfree>=$cost?$city:sanitize($city)),$cost),
-					($tfree>=$cost?"runmodule.php?op=travel&module=cities&cost=5&city=$scity&d=1":""));
-			}
+/**
+ * Name of the city as stored in accounts.location (without colour codes).
+ */
+function lasnoches_city(): string
+{
+    $city = sanitize((string) get_module_setting('villagename', 'lasnoches'));
 
-		}
-		if ($session['user']['superuser'] & SU_EDIT_USERS){
-			addnav("Superuser");
-			addnav(array("Go to %s (free)", $city),
-					"runmodule.php?op=travel&module=cities&cost=5&city=$scity&su=1");
-		}
-		tlschema();
-		break;
-	case "changesetting":
-		// Ignore anything other than villagename setting changes
-		if ($args['setting']=="villagename" && $args['module']=="lasnoches") {
-			if ($session['user']['location'] == $args['old']) {
-				$session['user']['location'] = $args['new'];
-			}
-			$sql = "UPDATE " . db_prefix("accounts") . " SET location='" .
-				$args['new'] . "' WHERE location='" . $args['old'] . "'";
-			db_query($sql);
-		}
-		break;
-	case "validlocation":
-		if (is_module_active("cities"))
-			$args[sanitize($city)]="village-lasnoches";
-		break;
-	case "moderate":
-		if (is_module_active("cities")) {
-			tlschema("commentary");
-			$args["lasnoches"]=sprintf_translate("%s", $city);
-			tlschema();
-		}
-		break;
-	case "villagetext":
-
-		if ($session['user']['location'] == sanitize($city)){
-			$args['text']="`\$`c`@`bYou stand in the middle of Las Noches - the capital of the world of the Shadows and Hollows. Here, Arrancar reside and battle constantly to achieve more strength.`n`nThe place looks deserted except for the few buildings known to belong to `\$Aizen`@ as leader of the Espada.`c`n`nYou get the feeling you're surrounded by powerful beings that watch your very steps.`n`n";
-            $args['schemas']['text'] = "module-lasnoches";
-			$args['clock']="`n`7Having no day or night cycle, you can only guess the time to be around `&%s`7.`n";
-            $args['schemas']['clock'] = "module-lasnoches";
-			if (is_module_active("calendar")) {
-				$args['calendar'] = "`n`2Secret voices whisper it is `&%s`2, `&%s %s %s`2.`n";
-				$args['schemas']['calendar'] = "module-lasnoches";
-			}
-			$args['title']=array("%s", sanitize($city));
-			$args['schemas']['title'] = "module-lasnoches";
-			$args['sayline']="whispers";
-			$args['schemas']['sayline'] = "module-lasnoches";
-			$args['talk']="`n`&You sense:`n";
-			$args['schemas']['talk'] = "module-lasnoches";
-			$args['newest'] = "";
-
-			//block all the multicity navs and modules. configure as needed for your server
-
-			
-			//blocknav("lodge.php");
-			//blocknav("weapons.php");
-			//blocknav("armor.php");
-			//blocknav("clan.php");
-			blocknav("train.php");
-			blocknav("pvp.php");
-			//blocknav("stables.php");
-			//blocknav("runmodule.php?module=cities&op=travel");
-			//blocknav("list.php");
-
-			if (!get_module_setting("showforest"))
-				blocknav("forest.php");
-
-
-
-			//blocknav("bank.php");
-			//blockmodule("cities");
-			blockmodule("questbasics");
-			blockmodule("house");
-			blockmodule("klutz");
-			blockmodule("abigail");
-			blockmodule("crazyaudrey");
-			blockmodule("zoo");
-			//blockmodule("battlearena");
-			blockmodule("beggarslane");
-			//blocknav("clan.php");
-			//blocknav("gardens.php");
-			//blocknav("gypsy.php");
-			//blockmodule("dwellings");
-			blocknav("mercenarycamp.php");
-			
-			
-
-
-
-			$args['schemas']['newest'] = "module-lasnoches";
-			$args['gatenav']="Hollow Gates";
-			$args['schemas']['gatenav'] = "module-lasnoches";
-			$args['fightnav']="Nearby Plains";
-			$args['schemas']['fightnav'] = "module-lasnoches";
-			$args['marketnav']="Market Square";
-			$args['schemas']['marketnav'] = "module-lasnoches";
-			$args['tavernnav']="Indulgment Lane";
-			$args['schemas']['tavernnav'] = "module-lasnoches";
-			$args['section']="lasnoches";
-			$args['infonav']="Espada Council";
-			$args['schemas']['infonav'] = "module-lasnoches";
-		}
-		break;
-
-	case "village":
-		$from = get_module_setting("travelfrom");
-		$to = get_module_setting("travelto");
-		$city = sanitize($city);
-		if ($session['user']['location']==$city){
-			tlschema($args['schemas']['gatenav']);
-			addnav($args['gatenav']);
-			tlschema();
-			addnav("Visit the Healing Faculty","healer.php?return=village.php");
-			modulehook("eliteforest");
-		}
-//		if ($session['user']['acctid']==7) {
-//		}
-		break;
-	}
-	return $args;
+    return $city !== '' ? $city : 'Las Noches';
 }
 
-function lasnoches_run(){
+/**
+ * Move every player from one location to another.
+ */
+function lasnoches_move_players(string $from, string $to): void
+{
+    Database::getDoctrineConnection()->executeStatement(
+        'UPDATE ' . Database::prefix('accounts') . ' SET location = :to WHERE location = :from',
+        ['to' => $to, 'from' => $from],
+        ['to' => ParameterType::STRING, 'from' => ParameterType::STRING]
+    );
 }
 
-function lasnoches_freetravel() {
-	$args = modulehook("count-travels", array('available'=>0,'used'=>0));
-	$free = max(0, $args['available'] - $args['used']);
-	return max(0,$free);
+function lasnoches_dohook(string $hookname, array $args): array
+{
+    global $session;
+
+    $city = lasnoches_city();
+    $here = $session['user']['location'] === $city;
+
+    switch ($hookname) {
+        case 'scrylocation':
+            // Nobody can scry into Hueco Mundo.
+            unset($args[$city]);
+            break;
+        case 'changesetting':
+            if (($args['module'] ?? '') === 'lasnoches' && ($args['setting'] ?? '') === 'villagename') {
+                $old = sanitize((string) $args['old']);
+                $new = sanitize((string) $args['new']);
+                lasnoches_move_players($old, $new);
+                if ($session['user']['location'] === $old) {
+                    $session['user']['location'] = $new;
+                }
+            }
+            break;
+        case 'validlocation':
+            if (is_module_active('cities')) {
+                $args[$city] = 'village-lasnoches';
+            }
+            break;
+        case 'moderate':
+            if (is_module_active('cities')) {
+                tlschema('commentary');
+                $args['lasnoches'] = sprintf_translate('%s', $city);
+                tlschema();
+            }
+            break;
+        case 'travel-cost':
+            if (($args['to'] ?? '') === $city) {
+                $args['cost'] = max((int) ($args['cost'] ?? 0), (int) get_module_setting('travelcost', 'lasnoches'));
+            }
+            break;
+        case 'travel':
+            if (!$here) {
+                lasnoches_travelnav($city);
+            }
+            break;
+        case 'villagetext':
+            if ($here) {
+                $args = lasnoches_villagetext($args, $city);
+            }
+            break;
+        case 'village':
+            if ($here) {
+                tlschema($args['schemas']['gatenav'] ?? 'module-lasnoches');
+                addnav($args['gatenav']);
+                tlschema();
+                addnav('Visit the Healing Faculty', 'healer.php?return=village.php');
+                modulehook('eliteforest');
+            }
+            break;
+    }
+
+    return $args;
 }
-?>
+
+/**
+ * Travel to Las Noches: Hollows always find their way home, others need
+ * experience and one of the gate cities.
+ */
+function lasnoches_travelnav(string $city): void
+{
+    global $session;
+
+    $hollow = false;
+    if (is_file('modules/zanpakutou/lib/races.php')) {
+        require_once 'modules/zanpakutou/lib/races.php';
+        $hollow = bleach_is_hollow();
+    }
+    $location = $session['user']['location'];
+    $gates = [(string) get_module_setting('travelfrom', 'lasnoches'), (string) get_module_setting('travelto', 'lasnoches')];
+    $allowed = $hollow
+        || ($session['user']['dragonkills'] >= (int) get_module_setting('mindk', 'lasnoches') && in_array($location, $gates, true));
+    $link = 'runmodule.php?module=cities&op=travel&city=' . urlencode($city);
+
+    tlschema('module-cities');
+    if ($allowed) {
+        addnav('More Dangerous Travel');
+        addnav(['%s?Go to %s', substr($city, 0, 1), $city], "$link&d=1");
+    }
+    if ($session['user']['superuser'] & SU_EDIT_USERS) {
+        addnav('Superuser');
+        addnav(['%s?Go to %s', substr($city, 0, 1), $city], "$link&su=1");
+    }
+    tlschema();
+}
+
+/**
+ * Village texts of Las Noches.
+ */
+function lasnoches_villagetext(array $args, string $city): array
+{
+    $texts = [
+        'text' => '`$`c`@`bYou stand in the middle of Las Noches - the capital of the world of shadows and Hollows. Here, Arrancar reside and battle constantly to gain more strength.`b`c`n`nThe place looks deserted except for the few buildings known to belong to `$Aizen`@ as leader of the Espada.`n`nYou get the feeling you are surrounded by powerful beings that watch your every step.`n`n',
+        'clock' => '`n`7Having no day or night cycle, you can only guess the time to be around `&%s`7.`n',
+        'title' => ['%s', $city],
+        'sayline' => 'whispers',
+        'talk' => '`n`&You sense:`n',
+        'newest' => '',
+        'gatenav' => 'Hollow Gates',
+        'fightnav' => 'Nearby Plains',
+        'marketnav' => 'Market Square',
+        'tavernnav' => 'Indulgence Lane',
+        'infonav' => 'Espada Council',
+    ];
+    if (is_module_active('calendar')) {
+        $texts['calendar'] = '`n`2Secret voices whisper it is `&%s`2, `&%s %s %s`2.`n';
+    }
+    foreach ($texts as $key => $value) {
+        $args[$key] = $value;
+        $args['schemas'][$key] = 'module-lasnoches';
+    }
+    $args['section'] = 'lasnoches';
+
+    // Hueco Mundo has no use for the trappings of the living.
+    blocknav('train.php');
+    blocknav('pvp.php');
+    blocknav('mercenarycamp.php');
+    if (!get_module_setting('showforest', 'lasnoches')) {
+        blocknav('forest.php');
+    }
+    foreach (['questbasics', 'house', 'klutz', 'abigail', 'crazyaudrey', 'zoo', 'beggarslane'] as $module) {
+        if (is_module_active($module)) {
+            blockmodule($module);
+        }
+    }
+
+    return $args;
+}
+
+function lasnoches_run(): void
+{
+}

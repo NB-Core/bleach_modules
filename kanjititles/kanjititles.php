@@ -1,140 +1,168 @@
-﻿<?php
+<?php
 
-function kanjititles_getmoduleinfo(){
-$info = array(
-	"name"=>"Kanji Titles",
-	"version"=>"1.0",
-	"author"=>"`2Oliver Brendel",
-	"category"=>"Titles",
-	"download"=>"",
-	
-	);
-	return $info;
+declare(strict_types=1);
+
+use Lotgd\Http;
+
+/**
+ * Kanji Titles
+ *
+ * At the Rock, Tetsubo writes a player's dragon kill title in kanji. The
+ * choice is remembered and applied to every later title. Expects the titles
+ * table to use the Bleach ranks listed in kanjititles_map().
+ */
+
+function kanjititles_getmoduleinfo(): array
+{
+    return [
+        'name' => 'Kanji Titles',
+        'version' => '2.0',
+        'author' => '`2Oliver Brendel',
+        'category' => 'Titles',
+        'download' => 'https://github.com/NB-Core/bleach_modules',
+        'prefs' => [
+            'Kanji Titles,title',
+            'japanese' => 'Show the dragon kill title in kanji,bool|0',
+        ],
+    ];
 }
 
-function kanjititles_install(){
-	module_addhook("dragonkilltext");
-	module_addhook_priority("setrace",INT_MAX);
-	module_addhook("rock");
-	return true;
+function kanjititles_install(): bool
+{
+    module_addhook('dragonkilltext');
+    module_addhook_priority('setrace', INT_MAX);
+    module_addhook('rock');
+
+    return true;
 }
 
-function kanjititles_uninstall(){
-	return true;
+function kanjititles_uninstall(): bool
+{
+    return true;
 }
 
-function kanjititles_dohook($hookname, $args){
-	global $session;
-	switch ($hookname) {
-		case "setrace": case "dragonkilltext":
-			$title=kanjititles_gettitle($session['user']['dragonkills'],$session['user']['race'],$session['user']['sex'],false);
-			$newtitle=$title;
-			require_once("lib/names.php");
-			$newname = change_player_title($title);
-			$session['user']['title'] = $title;
-			$session['user']['name'] = $newname;
-
-		
-		break;
-		case "rock":
-			addnav("Tetsubo");
-			addnav("Title Change to Japanese","runmodule.php?module=kanjititles&op=titles");
-			break;
-	}
-	return $args;
+/**
+ * Rōmaji title => kanji.
+ *
+ * @return array<string, string>
+ */
+function kanjititles_map(): array
+{
+    return [
+        'Junior Student' => '院生',
+        'Senior Student' => '上級院生',
+        'Shinigami' => '死神',
+        'Junior Officer' => '後輩死神',
+        'Senior Officer' => '先輩死神',
+        'Ranked Officer' => '席官',
+        'Fukutaicho' => '副隊長',
+        'Taicho' => '隊長',
+        '`$S`4ō`$T`4aicho' => '総隊長',
+    ];
 }
 
-function kanjititles_run(){
-	global $session;
-	$op=httpget('op');
-	$name="`gT`xe`gt`xsu`tbo";
-	page_header("%s",sanitize($name));
-	$u=&$session['user'];
-	addnav("Navigation");
-	addnav("Back to the rock","rock.php");
-	addnav("Actions");
-	switch ($op) {
-		case "changetitle":
-			$title=kanjititles_gettitle($session['user']['dragonkills'],$session['user']['race'],$session['user']['sex'],true);
-			$newtitle=$title;
-			require_once("lib/names.php");
-			debug($newtitle);debug($title);
-			$newname = change_player_title($title);
-			$session['user']['title'] = $title;
-			$session['user']['name'] = $newname;
-			output("`yAll set! Come back again...");
-			break;
-		case "overview":
-			output("`yYou approach %s`y and ask about Japanese Titles... which are available and what they mean....`n`n",$name);
-			$titles=array(
-				"Senior Student"=>"下死神",
-				"Shinigami"=>"死神",
-				"Junior Officer"=>"後輩死神 ",
-				"Senior Officer"=>"先輩死神",
-				"Ranked Officer"=>"席官",
-				"Fukutaicho"=>"副隊長",
-				"Taicho"=>"隊長, Taichō",
-				"`\$S`4ō`\$T`4aicho"=>"風影",
-				);
-			$wromanji=translate_inline("Rōmaji");
-			$wkanji=translate_inline("Kanji");
-			rawoutput("<center><table cellpadding='3' cellspacing='0' border='0' ><tr class='trhead'><td>$wromanji</td><td>$wkanji</td></tr>");
-			$class='';
-			foreach ($titles as $romanji=>$kanji) {
-				$class=($class=='trlight'?'trdark':'trlight');
-				rawoutput("<tr class='$class'><td>");
-				output_notl("`@$romanji");
-				rawoutput("</td><td>");
-				output_notl("`2$kanji");
-				rawoutput("</tr>");
-			}
-			rawoutput("</table>");
-			addnav("Back to the titles","runmodule.php?module=kanjititles&op=titles");
-			break;
-		case "titles":
-			output("`yYou approach %s`y and ask for Japanese Titles... you are explained that the following titles you get are in Rōmaji, like most Japanese things in the game, but you may here change it at any time to the Japanese counterparts. This does only affect your Final-Test-Title... if you have a custom title, it has a priority.`n`n`\$Do you want to change your title?",$name);
-			require_once("lib/names.php");
-			require_once("lib/titles.php");
-			$title=kanjititles_gettitle($session['user']['dragonkills'],$session['user']['race'],$session['user']['sex'],false);
-			debug($u['title']);
-			debug($title);
-			if ($u['title']==$title) {
-				addnav("`xChange it `\$NOW`x please","runmodule.php?module=kanjititles&op=changetitle");
-				output("`yPreview:`n`n`iBefore`i: %s`n`y`iAfter`i: %s",$u['title'],kanjititles_gettitle($session['user']['dragonkills'],$session['user']['race'],$session['user']['sex'],true));
-			} else {
-				output("Sadly, you do not have the standard title for your level... either you got a custom one by an event, or already have the Japanese one...");
-			}
-			addnav("Overview of available titles","runmodule.php?module=kanjititles&op=overview");
-			break;
-	
-	}
-	page_footer();
+/**
+ * The player's standard dragon kill title, in Rōmaji or kanji.
+ */
+function kanjititles_title(bool $japanese): string
+{
+    global $session;
+
+    require_once 'lib/titles.php';
+    $title = (string) get_dk_title($session['user']['dragonkills'], $session['user']['sex']);
+
+    return $japanese ? strtr($title, kanjititles_map()) : $title;
 }
 
-function kanjititles_gettitle($dk,$race,$sex=SEX_MALE,$jp=FALSE) {
-	require_once("lib/titles.php");
-	$titles=array(
-				"Junior Student"=>"ジュニア留学",
-				"Senior Student"=>"下死神",
-				"Shinigami"=>"死神",
-				"Junior Officer"=>"後輩死神 ",
-				"Senior Officer"=>"先輩死神",
-				"Ranked Officer"=>"席官",
-				"Fukutaicho"=>"副隊長",
-				"Taicho"=>"隊長, Taichō",
-				"`\$S`4ō`\$T`4aicho"=>"風影",
-				);
-	$title=get_dk_title($dk,$sex);
-	$ktitle='';
-	$ktitle=str_replace(array_keys($titles),$titles,$title);
+/**
+ * Set the player's title if they still carry the standard one.
+ */
+function kanjititles_apply(bool $japanese): bool
+{
+    global $session;
 
-	if ($jp) {
-		return $ktitle;
-	} else {
-		return $title;
-	}
-	
+    $current = (string) $session['user']['title'];
+    if ($current !== kanjititles_title(false) && $current !== kanjititles_title(true)) {
+        return false;
+    }
+    require_once 'lib/names.php';
+    $title = kanjititles_title($japanese);
+    $session['user']['name'] = change_player_title($title);
+    $session['user']['title'] = $title;
 
+    return true;
 }
 
-?>
+function kanjititles_dohook(string $hookname, array $args): array
+{
+    switch ($hookname) {
+        case 'setrace':
+        case 'dragonkilltext':
+            if (get_module_pref('japanese')) {
+                kanjititles_apply(true);
+            }
+            break;
+        case 'rock':
+            addnav('Tetsubo');
+            addnav('Title in Kanji', 'runmodule.php?module=kanjititles&op=titles');
+            break;
+    }
+
+    return $args;
+}
+
+function kanjititles_run(): void
+{
+    global $session;
+
+    $self = 'runmodule.php?module=kanjititles';
+    $name = '`gT`xe`gt`xsu`tbo';
+    page_header('Tetsubo');
+    addnav('Navigation');
+    addnav('Back to the Rock', 'rock.php');
+    addnav('Actions');
+
+    switch ((string) Http::get('op')) {
+        case 'changetitle':
+            $japanese = Http::get('to') === 'kanji';
+            if (kanjititles_apply($japanese)) {
+                set_module_pref('japanese', $japanese ? 1 : 0);
+                output('`yAll set! Your title is now %s`y. Come back any time...', $session['user']['title']);
+            } else {
+                output('`ySadly, you do not carry the standard title for your rank - a custom title takes priority.');
+            }
+            addnav('Back to the titles', "$self&op=titles");
+            break;
+        case 'overview':
+            output('`yYou ask %s`y which Japanese titles exist and what they mean....`n`n', $name);
+            rawoutput("<table cellpadding='3' cellspacing='0' border='0'><tr class='trhead'><td>"
+                . htmlspecialchars(translate_inline('Rōmaji'), ENT_QUOTES) . '</td><td>'
+                . htmlspecialchars(translate_inline('Kanji'), ENT_QUOTES) . '</td></tr>');
+            $class = 'trdark';
+            foreach (kanjititles_map() as $romaji => $kanji) {
+                $class = $class === 'trlight' ? 'trdark' : 'trlight';
+                rawoutput("<tr class='$class'><td>");
+                output_notl('`@%s', $romaji);
+                rawoutput('</td><td>');
+                output_notl('`2%s', $kanji);
+                rawoutput('</td></tr>');
+            }
+            rawoutput('</table>');
+            addnav('Back to the titles', "$self&op=titles");
+            break;
+        default:
+            output('`yYou ask %s`y about Japanese titles. Like most Japanese things in the game, your rank is written in Rōmaji, but you may switch it to its kanji at any time. This only affects your rank title - a custom title takes priority.`n`n', $name);
+            $current = (string) $session['user']['title'];
+            if ($current === kanjititles_title(false) && $current !== kanjititles_title(true)) {
+                output('`yPreview:`n`n`iBefore`i: %s`n`y`iAfter`i: %s', $current, kanjititles_title(true));
+                addnav('`xChange it to kanji', "$self&op=changetitle&to=kanji");
+            } elseif ($current === kanjititles_title(true) && $current !== kanjititles_title(false)) {
+                output('`yYour title is written in kanji: %s`y.', $current);
+                addnav('`xChange it back to Rōmaji', "$self&op=changetitle&to=romaji");
+            } else {
+                output('`ySadly, you do not carry the standard title for your rank, or it has no kanji...');
+            }
+            addnav('Overview of available titles', "$self&op=overview");
+    }
+    page_footer();
+}

@@ -1,282 +1,344 @@
-﻿<?php
+<?php
 
-function training_bleach_getmoduleinfo() {
-	$info = array
-		(
-		"name"=>"Training Grounds (Bleach)",
-		"version"=>"1.0",
-		"author"=>"`2Oliver Brendel",
-		"category"=>"Training",
-		"download"=>"",
-		"requires"=>array(
-			"specialtysystem"=>"1.0|Specialty System Core by `2Oliver Brendel",
-			),
-		);
-	return $info;
+declare(strict_types=1);
+
+use Lotgd\Forms;
+use Lotgd\Http;
+
+/**
+ * Training Grounds (Bleach)
+ *
+ * Training grounds next to the masters: buy attack and defense training,
+ * switch the specialty, rest or recall the mount and listen to a wise man.
+ * Shinigami and Quincy reach them from train.php, Hollows (Arrancar, Menos)
+ * from the Espada training of arrancar_train.
+ *
+ * Fires "traininggrounds" (Shinigami grounds) or "arrancargrounds" (Hollow
+ * grounds) so other modules can add their navigation.
+ */
+
+require_once 'modules/zanpakutou/lib/races.php';
+
+function training_bleach_getmoduleinfo(): array
+{
+    return [
+        'name' => 'Training Grounds (Bleach)',
+        'version' => '2.0',
+        'author' => '`2Oliver Brendel',
+        'category' => 'Training',
+        'download' => 'https://github.com/NB-Core/bleach_modules',
+        'requires' => [
+            'specialtysystem' => '1.03|Specialty System by Oliver Brendel (NB-Core/modules)',
+            'zanpakutou' => '2.0|Zanpakutou (Bleach) by Oliver Brendel',
+        ],
+    ];
 }
 
-function training_bleach_install(){
-	module_addhook("footer-train");
-	return true;
+function training_bleach_install(): bool
+{
+    module_addhook('footer-train');
+    module_addhook('arrancar-footer');
+
+    return true;
 }
 
-function training_bleach_uninstall(){
-	return true;
+function training_bleach_uninstall(): bool
+{
+    return true;
 }
 
-function training_bleach_dohook($hookname,$args){
-	global $session;
-	switch ($hookname) {
-	case "footer-train":
-		$op=httpget('op');
-		if ($op!='' && $op!='question') break;
-		if (($session['user']['race']==sanitize("Arrancar")) || ($session['user']['race']==sanitize("Menos"))) break;
-		addnav("Training");
-		addnav("Training Grounds","runmodule.php?module=training_bleach");
-		break;
-	}
-	return $args;
+function training_bleach_dohook(string $hookname, array $args): array
+{
+    $op = (string) Http::get('op');
+    if ($op !== '' && $op !== 'question') {
+        return $args;
+    }
+    $hollow = bleach_is_hollow();
+    if (($hookname === 'footer-train' && !$hollow) || ($hookname === 'arrancar-footer' && $hollow)) {
+        addnav('Training');
+        addnav('Training Grounds', 'runmodule.php?module=training_bleach');
+    }
+
+    return $args;
 }
 
-function training_bleach_run() {
-	global $session;
-	page_header("Training Grounds");
-	addnav("Navigation");
-	addnav("Back to the Main Grounds","train.php");
-	output("`#`b`c`n`2Training Grounds`0`c`b`n`n");
-	require_once("modules/specialtysystem/datafunctions.php");
-	$op = httpget('op');
-	$cost=array(48,225,585,990,1575,2250,2790,3420,4230,5040,5850,6840,8010,9000,10350,11500,13775,15850,17030,18270,20020,21150,22500,25550,30000,32000,34000,38000);	
-	$multi=75;
-	$gold=$session['user']['level']*$multi;
-	modulehook("traininggrounds",array());
-	switch ($op) {
-	case "mountsummonexecute":
-		$action = httpget('action');
-		$who=httpget('who');
-		$gold=round($gold/2,0);
-		if ($session['user']['gold']<$gold) {
-			output("`3Shame on you! You do not have enough gold with you!");
-			break;
-		}
-		$session['user']['gold']-=$gold;
-		require_once("lib/battle-skills.php");
-		switch ($action) {
-		case 1:
-			output("`%%s`3 intonates some strange syllables... you join in and together you call your mount back from its rest...",$who);
-			output_notl("`n`n");
-			unsuspend_buff_by_name('mount','`3You feel full of new inspiration along with your mount.');
-			break;
-		case 0:
-			output("`%%s`3 intonates some strange syllables... you join in and together you send your mount at rest for some time...",$who);
-			output_notl("`n`n");
-			suspend_buff_by_name('mount','`3You will certainly miss your fellow comrade...');
-			break;
-		}
-		break;
-	case "mountsummon":
-		global $playermount;
-		$gold=round($gold/2,0);
-		addnav("Back to the Training Grounds","runmodule.php?module=training_bleach");
-		$who=array("Zaraki Kenpachi", "Madarame Ikkaku","Hisagi Shuuhei","Matsumoto Rangiku (^^)","Abarai Renji","Kira Izuru","Kuchiki Rukia");
-		$rand=array_rand($who);
-		$who=$who[$rand];
-		$action=httpget('action');
-		$actionword=($action==1?translate_inline("Summon"):translate_inline("Unsummon"));
-		output("`3You decide to %s your permanent mount... you could do this on your own, too, but it is always convenient to have somebody helping you.",($action==1?translate_inline("summon"):translate_inline("unsummon")));
-		output("`n`nKnowing it would take also more time to do this all by yourself, you decide to go to `%%s`3 to ask for help.`n`n",$who);
-		output("`3\"`tSo... let me see... you want to %s `v%s`t? No big deal, this won't take much  time, so it costs only `^%s gold`t to relieve me from duty.`3\".`n`n",($action==1?translate_inline("summon"):translate_inline("unsummon")),$playermount['mountname'],$gold);
-		addnav("Actions");
-		addnav(array("%s your mount",$actionword),"runmodule.php?module=training_bleach&op=mountsummonexecute&action=$action&who=$who");
-		break;
-	case "setspecialty":
-		if ($session['user']['gold']<$gold) {
-			output("`3Shame on you! You do not have enough gold with you!");
-			break;
-		}
-		output("`3\"`tYou are now working for your new specialty...good luck!`3\"");
-		output_notl("`n`n");//debug(httppost('ssystem'));
-		specialtysystem_set(array("active"=>httppost('ssystem')));
-		if ($session['user']['specialty']!='SS') $session['user']['specialty']='SS';
-		$session['user']['gold']-=$gold;
-		break;
-	case "specialty":
-		addnav("Back to the Training Grounds","runmodule.php?module=training_bleach");
-		$who=array("Zaraki Kenpachi", "Madarame Ikkaku","Hisagi Shuuhei","Matsumoto Rangiku (^^)","Abarai Renji","Kira Izuru","Kuchiki Rukia");
-		$rand=array_rand($who);
-		$who=$who[$rand];
-		output("`3You decide to change your specialty... you want to work for a new kind of jutsu from now on.");
-		output("`n`nKnowing it would take time to do this all by yourself, you decide to go to `%%s`3 to ask for help.`n`n",$who);
-		output("`3\"`tSo... let me see... you want to switch your jutsus... I can help you. But for my time you need to pay me off for my other duties at this time. Currently that would be `^%s gold pieces`t. If you want, select your new kind of jutsu and we can keep going.`3\".`n`n",$gold);
-		output("You ponder about that offer... what are you going to do?");
-		output_notl("`n`n");
-		rawoutput("<form action='runmodule.php?module=training_bleach&op=setspecialty' method='POST'>");
-		addnav("","runmodule.php?module=training_bleach&op=setspecialty");
-		$specs=specialtysystem_getspecs();//debug($specs);
-		if ($specs==array()) {
-			output("Sorry, I have no registered specialties for you here...");
-			break;
-		}
-		rawoutput("<select name='ssystem'>");
-		$active=specialtysystem_get("active");
-		foreach ($specs as $key=>$data) {//debug($data);
-			$name=translate_inline($data['spec_name']);
-			if ($data['dragonkill_minimum_requirement']>$session['user']['dragonkills']) continue;
-			if (((int)$data['dragonkill_minimum_requirement'])==-1) continue;
-			if ($data['modulename']==$active) continue;
-			if (isset($data['race_requirements']) && $data['race_requirements']!='') {
-				$race_req=unserialize(stripslashes($data['race_requirements']));
-				if (is_array($race_req)) {
-					$available=true;
-					$found=0;
-					foreach ($race_req as $race) {
-						//check if he has a race that may not select this
-						if (substr($race,0,1) =="!") {
-							$prefix=translate_inline("Not");
-							$race=substr($race,1);
-							if (sanitize($session['user']['race'])==$race) continue;
-						//or if he is in one that may select this
-						} else {
-							if (sanitize($session['user']['race'])==$race) $found++;
-							$prefix="";
-						}
-						$races_temp[]=$prefix." ".translate_inline($race,"race");
-					}
-					//if we cannot find the race to be allowed, make it unavailable
-					if ($found==0) continue;
-				} 
-			}
-			
-			rawoutput("<option value='{$data['modulename']}'>$name</option>");
-		}
-		rawoutput("</select>");
-		$submit=translate_inline("Submit");
-		rawoutput("<br><br><input type='submit' value='$submit'></form>");
-		output("`n`n`lPS: You still retain the knowledge of your current specialty/specialties. You simply get new skillpoints in the new specialty you select here.");
-		break;
-	case "trainoffensive":
-		addnav("Back to the Training Grounds","runmodule.php?module=training_bleach");
-		addnav("Actions");
-		$who=array("Zaraki Kenpachi", "Madarame Ikkaku","Hisagi Shuuhei","Matsumoto Rangiku (^^)","Abarai Renji","Kira Izuru","Kuchiki Rukia");
-		output("`c`b`1~~~ `\$Offensive Training`1 ~~~`c`n`n");
-		$rand=array_rand($who);
-		$who=$who[$rand];
-		$lev=$session['user']['weapondmg'];
-		$dummy=modulehook("training-costs-o",array("user"=>$session['user'],"cost"=>$cost));
-		$cost=$dummy['cost'];
-		switch(httpget('action')) {
-			case "train":
-				$session['user']['gold']-=$cost[$lev];
-				$session['user']['weapondmg']=$lev+1;
-				$session['user']['attack']++;
-				output("`1You have successfully gained `%one attack point`1 due to harsh and rigorous training!`n`n");
-				debuglog("trained and got +1 attack, now has ".$session['user']['weapondmg']." points and a total of ".$session['user']['attack'].", paid ".$cost[$lev]." gold.");
-				if (e_rand(0,10)==10) {
-					output("`2You also feel you have satisfied your zanpakutou pretty well!");
-					output("`n`~(You gain 20 favours)");
-					$session['user']['deathpower']+=20;
-				}
-				break;
-			default:
-			output("`3You look for somebody who has enough time to teach you something about how to improve your offensive skills... %s`3 is currently free.`n`n",$who);
-			output("\"`tWell, if you are up for a little training... it will cost you `^%s gold`t to improve your current skills who are at level %s currently.`3\"",$cost[$lev],$lev);
-			$link='';
-			if ($cost[$lev]<=$session['user']['gold']) $link="runmodule.php?module=training_bleach&op=trainoffensive&action=train";
-			addnav("Train Yourself",$link);
-		}
-		
-		break;
-		
-	case "traindefensive":
-		addnav("Back to the Training Grounds","runmodule.php?module=training_bleach");
-		addnav("Actions");
-		$who=array("Unohana Retsu", "Shunsui Kyouraku","Komamura Saijin","Ukitake Jyuushirou","Kusajishi Yachiru","Kuchiki Rukia");
-		output("`c`b`1~~~ `\$Defensive Training`1 ~~~`c`n`n");
-		$rand=array_rand($who);
-		$who=$who[$rand];
-		$lev=$session['user']['armordef'];
-		$dummy=modulehook("training-costs-d",array("user"=>$session['user'],"cost"=>$cost));
-		$cost=$dummy['cost'];
-		switch(httpget('action')) {
-			case "train":
-				$session['user']['gold']-=$cost[$lev];
-				$session['user']['armordef']=$lev+1;
-				$session['user']['defense']++;
-				output("`1You have successfully gained `%one defense point`1 due to harsh and rigorous training!`n`n");
-				debuglog("trained and got +1 defense, now has ".$session['user']['armordef']." points and a total of ".$session['user']['defense'].", paid ".$cost[$lev]." gold.");
-				if (e_rand(0,10)==10) {
-					$fav=e_rand(2,20);
-					output("`2You also feel you have satisfied your zanpakutou pretty well!");
-					output("`n`~(You gain %s favours)",$fav);
-					$session['user']['deathpower']+=$fav;
-				}
-				break;
-			default:
-			output("`3You look for somebody who has enough time to teach you something about how to improve your defensive skills... %s`3 is currently free.`n`n",$who);
-			output("\"`tWell, if you are up for a little training... it will cost you `^%s gold`t to improve your current skills who are at level %s currently.`3\"",$cost[$lev],$lev);
-			$link='';
-			if ($cost[$lev]<=$session['user']['gold']) $link="runmodule.php?module=training_bleach&op=traindefensive&action=train";
-			addnav("Train Yourself",$link);
-		}
-		break;
-		case "wiseman":
-			$array=array(
-				"Resolve is hard like a diamond, sharper than steel and clearer than the sun in the sky... either you do the crushing, or you are crushed.",
-				"You need to grow more.",
-				"Death is only the beginning.",
-				"Don't eat too late.",
-				"Treat other souls with respect.",
-				"Wash your hands after visiting the restroom.",
-				"Don't prey on the weak. Imagine they become strong one day.",
-				"Being self-sufficient is good when out alone in the desert. But also think about leaving this desert some day.",
-				"We all are actors in a gigantic stage.",
-				"Life is just a game. But with great graphics...",
-			);
-			$array=translate_inline($array);
-			$cnt=date("d")%count($array);
-			output_notl("`\$".$array[$cnt]);
-			break;
-	default:
-		if (is_module_active('addimages')) output_notl("`c<IMG SRC=\"modules/addimages/header-train.gif\">`c<BR>\n",true);
-		output("`3You enter the vast training grounds you know about.`n`n");
-		output("Many shingami novices and also higher ranked are training there to improve themselves or simply to be able to complete their respective tasks perfectly to go even higher in rank.");
-		$who=array("Zaraki Kenpachi", "Madarame Ikkaku","Hisagi Shuuhei","Matsumoto Rangiku (^^)","Abarai Renji","Kira Izuru","Kuchiki Rukia","the Training Master","the toothless floorcleaner");
-		$rand=array_rand($who);
-		$who=$who[$rand];
-		output("`nThough many do not seem to notice you, `%%s`3 gives you a short glance and nods.",$who);
-		output("`n`n`vWhat do you want to do?");
-		training_bleachnav();
-		addnav("Wise Man");
-		addnav("Ask...","runmodule.php?module=training_bleach&op=wiseman");
-		break;
-	}
-	page_footer();
+/**
+ * Gold cost of the next attack or defense training, indexed by level.
+ *
+ * @return list<int>
+ */
+function training_bleach_costs(): array
+{
+    return [48, 225, 585, 990, 1575, 2250, 2790, 3420, 4230, 5040, 5850, 6840, 8010, 9000, 10350, 11500, 13775, 15850, 17030, 18270, 20020, 21150, 22500, 25550, 30000, 32000, 34000, 38000];
 }
 
-function training_bleachnav() {
-	global $session;
-	addnav("Actions");
-	if (is_module_active("specialtysystem")) addnav("Switch your specialty","runmodule.php?module=training_bleach&op=specialty");
-	if (has_buff('mount')) {
-		if ($session['bufflist']['mount']['suspended']) {
-			$sw=1;
-			$action=translate_inline("Summon");
-		} else {
-			$sw=0;
-			$action=translate_inline("Unsummon");
-		}
-		addnav(array("%s your mount",$action),"runmodule.php?module=training_bleach&op=mountsummon&action=$sw");
-	}
-	$lev=$session['user']['weapondmg']+$session['user']['armordef'];
-	if ($lev<30) {
-		if ($session['user']['weapondmg']<25) {
-		addnav("Train your Offensive Zanpakutou Skills","runmodule.php?module=training_bleach&op=trainoffensive");
-		}
-		if ($session['user']['armordef']<25) {
-			addnav("Train your Defensive Zanpakutou Skills","runmodule.php?module=training_bleach&op=traindefensive");
-		}
-	}
+/**
+ * Texts and people of the Shinigami or the Hollow grounds.
+ */
+function training_bleach_flavour(bool $hollow): array
+{
+    if ($hollow) {
+        return [
+            'back' => 'runmodule.php?module=arrancar_train',
+            'hook' => 'arrancargrounds',
+            'trainers' => ['Nnoitra', 'Starrk', 'Baraggan', 'Cirucci (^^)', 'Tesla', 'Grimmjow', 'Luppi', 'Szayel Aporro', 'Ulquiorra'],
+            'healers' => ['Nnoitra', 'Starrk', 'Baraggan', 'Nelliel (^^)', 'Tesla', 'Grimmjow', 'Luppi', 'Szayel Aporro', 'Ulquiorra'],
+            'idle' => ['Nnoitra', 'Starrk', 'Baraggan', 'Cirucci (^^)', 'Tesla', 'Grimmjow', 'Luppi', 'a random Fracción', 'the toothless hollow floor cleaner'],
+            'intro' => 'This place looks almost deserted - except for the signs of decay and destruction that hover over the entire area. It is used for special training indeed.',
+            'glance' => '`nThough many do not seem to notice you, `%%s`3 gives you a short glance and looks away in disgust.',
+            'offer' => '"`tDisgusting ant... it will cost you `^%s gold`t to improve your current skills, which are at level %s.`3"',
+            'favour' => '`2You also feel you have satisfied Death pretty well!',
+            'wise' => 'Wise Hollow',
+            'quotes' => [
+                'Resolve is hard like a diamond, sharper than steel and clearer than the sun in the sky... either you do the crushing, or you are crushed.',
+                'You need to grow more.',
+                'Death is only the beginning.',
+                "Don't eat too late. And don't eat yellow hollows.",
+                'Treat other souls with little respect.',
+                'Prey on the weak. Then again, they might become strong one day - better wait and harvest later.',
+                'Being self-sufficient is good when out alone in Hueco Mundo. But think about leaving this desert some day to find Shinigami and take them out.',
+                'We all are actors on a gigantic stage. Try to be in the spotlight.',
+                'Death is just a game. But with great graphics...',
+                'A proper meal consists of at least one healthy vegan soul.',
+                'Meat eaters give fatty souls.',
+            ],
+        ];
+    }
+
+    return [
+        'back' => 'train.php',
+        'hook' => 'traininggrounds',
+        'trainers' => ['Zaraki Kenpachi', 'Madarame Ikkaku', 'Hisagi Shūhei', 'Matsumoto Rangiku (^^)', 'Abarai Renji', 'Kira Izuru', 'Kuchiki Rukia'],
+        'healers' => ['Unohana Retsu', 'Kyōraku Shunsui', 'Komamura Saijin', 'Ukitake Jūshirō', 'Kusajishi Yachiru', 'Kuchiki Rukia'],
+        'idle' => ['Zaraki Kenpachi', 'Madarame Ikkaku', 'Hisagi Shūhei', 'Matsumoto Rangiku (^^)', 'Abarai Renji', 'Kira Izuru', 'Kuchiki Rukia', 'the Training Master', 'the toothless floor cleaner'],
+        'intro' => 'Many Shinigami novices and higher ranks train here to improve themselves or simply to complete their tasks perfectly and rise even higher in rank.',
+        'glance' => '`nThough many do not seem to notice you, `%%s`3 gives you a short glance and nods.',
+        'offer' => '"`tWell, if you are up for a little training... it will cost you `^%s gold`t to improve your current skills, which are at level %s.`3"',
+        'favour' => '`2You also feel you have satisfied your zanpakutō pretty well!',
+        'wise' => 'Wise Man',
+        'quotes' => [
+            'Resolve is hard like a diamond, sharper than steel and clearer than the sun in the sky... either you do the crushing, or you are crushed.',
+            'You need to grow more.',
+            'Death is only the beginning.',
+            "Don't eat too late.",
+            'Treat other souls with respect.',
+            'Wash your hands after visiting the restroom.',
+            "Don't prey on the weak. Imagine they become strong one day.",
+            'Being self-sufficient is good when out alone in the desert. But also think about leaving this desert some day.',
+            'We all are actors on a gigantic stage.',
+            'Life is just a game. But with great graphics...',
+        ],
+    ];
 }
 
+/**
+ * Specialties the player may switch to here.
+ *
+ * @return array<string, string> module name => translated specialty name
+ */
+function training_bleach_switchable_specialties(): array
+{
+    global $session;
 
-?>
+    require_once 'modules/specialtysystem/datafunctions.php';
+    // The race check lives in the engine's module file.
+    require_once 'modules/specialtysystem.php';
+    $active = specialtysystem_get('active');
+    $choices = [];
+    foreach (specialtysystem_getspecs() as $module => $data) {
+        $minimum = (int) $data['dragonkill_minimum_requirement'];
+        if ($minimum === -1 || $minimum > $session['user']['dragonkills'] || $module === $active) {
+            continue;
+        }
+        [$allowed] = specialtysystem_check_races((string) ($data['race_requirements'] ?? ''), (string) $session['user']['race']);
+        if (!$allowed) {
+            continue;
+        }
+        $choices[$module] = translate_inline($data['spec_name'], 'module-' . $module);
+    }
+
+    return $choices;
+}
+
+function training_bleach_run(): void
+{
+    global $session;
+
+    $u = &$session['user'];
+    $hollow = bleach_is_hollow();
+    $flavour = training_bleach_flavour($hollow);
+    $self = 'runmodule.php?module=training_bleach';
+    $gold = (int) $u['level'] * 75;
+    $op = (string) Http::get('op');
+
+    page_header('Training Grounds');
+    addnav('Navigation');
+    addnav('Back to the Main Grounds', $flavour['back']);
+    output('`#`b`c`n`2Training Grounds`0`c`b`n`n');
+    modulehook($flavour['hook'], []);
+
+    switch ($op) {
+        case 'mountsummon':
+        case 'mountsummonexecute':
+            $summon = !empty($session['bufflist']['mount']['suspended']);
+            $price = (int) round($gold / 2);
+            $who = $flavour['trainers'][array_rand($flavour['trainers'])];
+            addnav('Back to the Training Grounds', $self);
+            if (!has_buff('mount')) {
+                output('`3You have no mount to call.');
+                break;
+            }
+            if ($op === 'mountsummonexecute') {
+                if ($u['gold'] < $price) {
+                    output('`3Shame on you! You do not have enough gold with you!');
+                    break;
+                }
+                $u['gold'] -= $price;
+                if ($summon) {
+                    output('`%%s`3 intones some strange syllables... you join in, and together you call your mount back from its rest...`n`n', $who);
+                    unsuspend_buff_by_name('mount', '`3You feel full of new inspiration along with your mount.');
+                } else {
+                    output('`%%s`3 intones some strange syllables... you join in, and together you send your mount to rest for some time...`n`n', $who);
+                    suspend_buff_by_name('mount', '`3You will certainly miss your fellow comrade...');
+                }
+                break;
+            }
+            global $playermount;
+            $action = translate_inline($summon ? 'summon' : 'unsummon');
+            output('`3You decide to %s your mount... you could do this on your own, too, but it is always convenient to have somebody helping you.', $action);
+            output('`n`nKnowing it would take more time all by yourself, you ask `%%s`3 for help.`n`n', $who);
+            output('`3"`tSo... you want to %s `v%s`t? No big deal, this won\'t take much time, so it costs only `^%s gold`t to relieve me from duty.`3"`n`n', $action, $playermount['mountname'] ?? '', $price);
+            addnav('Actions');
+            addnav($summon ? 'Summon your mount' : 'Unsummon your mount', "$self&op=mountsummonexecute");
+            break;
+        case 'specialty':
+        case 'setspecialty':
+            addnav('Back to the Training Grounds', $self);
+            if ($hollow || !is_module_active('specialtysystem')) {
+                output('`3Nobody here can help you with that.');
+                break;
+            }
+            $choices = training_bleach_switchable_specialties();
+            if ($op === 'setspecialty' && Http::postIsset('ssystem') && !Forms::isUnverifiedRequest()) {
+                $choice = (string) Http::post('ssystem');
+                if (!isset($choices[$choice])) {
+                    output('`3"`tI cannot teach you that.`3"');
+                    break;
+                }
+                if ($u['gold'] < $gold) {
+                    output('`3Shame on you! You do not have enough gold with you!');
+                    break;
+                }
+                $u['gold'] -= $gold;
+                specialtysystem_set(['active' => $choice]);
+                $u['specialty'] = 'SS';
+                set_module_pref('cache', '', 'specialtysystem');
+                output('`3"`tYou are now working towards %s`t... good luck!`3"`n`n', $choices[$choice]);
+                break;
+            }
+            $who = $flavour['trainers'][array_rand($flavour['trainers'])];
+            output('`3You decide to change your specialty and to work on a new kind of technique from now on.');
+            output('`n`nKnowing it would take time to do this all by yourself, you ask `%%s`3 for help.`n`n', $who);
+            output('`3"`tSo... you want to switch your techniques... I can help you. But you need to pay me off for my other duties: currently `^%s gold pieces`t.`3"`n`n', $gold);
+            if ($choices === []) {
+                output('`3"`tSorry, there is nothing else I can teach you right now.`3"');
+                break;
+            }
+            $action = "$self&op=setspecialty";
+            addnav('', $action);
+            $options = '';
+            foreach ($choices as $module => $name) {
+                $options .= "<option value='" . htmlspecialchars($module, ENT_QUOTES) . "'>" . htmlspecialchars(sanitize($name), ENT_QUOTES) . '</option>';
+            }
+            rawoutput("<form action='" . htmlspecialchars($action, ENT_QUOTES) . "' method='POST'>" . Forms::csrfField()
+                . "<select name='ssystem'>$options</select> "
+                . "<input type='submit' class='button' value='" . htmlspecialchars(translate_inline('Switch'), ENT_QUOTES) . "'></form>");
+            output('`n`n`lPS: You keep the knowledge of your current specialties. You simply gain new skill points in the new specialty you select here.');
+            break;
+        case 'trainoffensive':
+        case 'traindefensive':
+            $offensive = $op === 'trainoffensive';
+            $field = $offensive ? 'weapondmg' : 'armordef';
+            $people = $offensive ? $flavour['trainers'] : $flavour['healers'];
+            $who = $people[array_rand($people)];
+            addnav('Back to the Training Grounds', $self);
+            addnav('Actions');
+            output($offensive ? '`c`b`1~~~ `$Offensive Training`1 ~~~`b`c`n`n' : '`c`b`1~~~ `$Defensive Training`1 ~~~`b`c`n`n');
+            $lev = (int) $u[$field];
+            $hook = modulehook($offensive ? 'training-costs-o' : 'training-costs-d', ['user' => $u, 'cost' => training_bleach_costs()]);
+            $price = (int) ($hook['cost'][$lev] ?? 0);
+            if (!training_bleach_can_train($field) || $price <= 0) {
+                output('`3"`tThere is nothing more I can teach you.`3"');
+                break;
+            }
+            if (Http::get('action') === 'train') {
+                if ($u['gold'] < $price) {
+                    output('`3Shame on you! You do not have enough gold with you!');
+                    break;
+                }
+                $u['gold'] -= $price;
+                $u[$field] = $lev + 1;
+                if ($offensive) {
+                    $u['attack']++;
+                    output('`1You have gained `%one attack point`1 through harsh and rigorous training!`n`n');
+                } else {
+                    $u['defense']++;
+                    output('`1You have gained `%one defense point`1 through harsh and rigorous training!`n`n');
+                }
+                debuglog(sprintf('trained %s to level %d, paid %d gold', $field, $lev + 1, $price));
+                if (e_rand(0, 10) === 10) {
+                    $favour = e_rand(2, 20);
+                    output($flavour['favour']);
+                    output('`n`~(You gain %s favour)`n', $favour);
+                    $u['deathpower'] += $favour;
+                }
+                break;
+            }
+            output('`3You look for somebody with enough time to teach you... %s`3 is currently free.`n`n', $who);
+            output($flavour['offer'], $price, $lev);
+            addnav('Train Yourself', $u['gold'] >= $price ? "$self&op=$op&action=train" : '');
+            break;
+        case 'wiseman':
+            addnav('Back to the Training Grounds', $self);
+            $quotes = $flavour['quotes'];
+            output_notl('`$');
+            output($quotes[(int) date('z') % count($quotes)]);
+            break;
+        default:
+            if (!$hollow && is_module_active('addimages')) {
+                rawoutput("<div style='text-align:center'><img src='modules/addimages/header-train.gif' alt=''></div>");
+            }
+            output('`3You enter the vast training grounds you know so well.`n`n');
+            output($flavour['intro']);
+            output($flavour['glance'], $flavour['idle'][array_rand($flavour['idle'])]);
+            output('`n`n`vWhat do you want to do?');
+            addnav('Actions');
+            if (!$hollow && is_module_active('specialtysystem')) {
+                addnav('Switch your specialty', "$self&op=specialty");
+            }
+            if (has_buff('mount')) {
+                addnav(!empty($session['bufflist']['mount']['suspended']) ? 'Summon your mount' : 'Unsummon your mount', "$self&op=mountsummon");
+            }
+            if (training_bleach_can_train('weapondmg')) {
+                addnav('Train your Offensive Skills', "$self&op=trainoffensive");
+            }
+            if (training_bleach_can_train('armordef')) {
+                addnav('Train your Defensive Skills', "$self&op=traindefensive");
+            }
+            addnav($flavour['wise']);
+            addnav('Ask...', "$self&op=wiseman");
+    }
+    page_footer();
+}
+
+/**
+ * Up to 25 levels per skill and 30 in total.
+ */
+function training_bleach_can_train(string $field): bool
+{
+    global $session;
+
+    $u = $session['user'];
+
+    return (int) $u[$field] < 25 && (int) $u['weapondmg'] + (int) $u['armordef'] < 30;
+}
